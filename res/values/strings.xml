@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources  xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+
+    <string name="app_name">TestK400</string>
+    <string name="hello_world">Hello world!</string>
+    <string name="ble_not_supported">BLE is not supported</string>
+    <string name="title_devices">BLE Device Scan</string>
+    <string name="unknown_device">Unknown device</string>
+    <string name="error_bluetooth_not_supported">Bluetooth not supported.</string>
+    <string name="menu_connect">Connect</string>
+    <string name="menu_disconnect">Disconnect</string>
+    <string name="menu_scan">Scan</string>
+    <string name="menu_stop">Stop</string>
+    
+    <string name="connected_state">连接状态:  </string>
+    <string name="state_connected"> 已连接  </string>
+    <string name="state_disconnected"> 已断开  </string>
+    <string name="show_temperarue">温度值:  </string>
+	<string name="get_calibration">获取校验:  </string>
+	<string name="set_calibration">校验过:%1$1s,  offset = %2$3s </string>
+	
+	<string name="set_alarm_temp">设置报警:  </string>
+	<string name="get_alarm_temp">获取报警值:  </string>
+	<string name="fahrenheit">华氏温度  </string>
+</resources>
