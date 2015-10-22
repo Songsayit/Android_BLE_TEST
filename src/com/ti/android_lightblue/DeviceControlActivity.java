@@ -58,6 +58,8 @@ public class DeviceControlActivity extends Activity {
 	private BluetoothGattCharacteristic mRWGattChara = null;
 	
 	private TextView mTxtShowTemp;
+	private TextView mTxtShowTempuV;
+	
 	private Button mBtnGetCalibration;
 	private TextView mTxtShowCalibration;
 	private TextView mTxtConnectedState;
@@ -69,7 +71,9 @@ public class DeviceControlActivity extends Activity {
 	private Button mBtnGetAlarmTemp;
 	private TextView mTxtShowAlarmTemp;
 	
-	private TextView mTxtShowTempAdc;
+	
+	private Button mBtnGetBatV;
+	private TextView mTxtShowBatV;
 	
 	private TextView mTxtShowLog ;
 	private ScrollView mScrollViewShowLog ;
@@ -139,6 +143,7 @@ public class DeviceControlActivity extends Activity {
 				
 			} else if (BluetoothLeService.ACTION_DATA_NOTIFY.equals(action)) {
 				byte[] values = intent.getByteArrayExtra(BluetoothLeService.EXTRA_DATA);
+				Log.e(TAG, "ACTION_DATA_NOTIFY uuid = " + intent.getStringExtra(BluetoothLeService.EXTRA_UUID));
 				processValues(values);
 			}
 		}
@@ -157,6 +162,8 @@ public class DeviceControlActivity extends Activity {
 		
 		setContentView(R.layout.activity_main);
 		mTxtShowTemp = (TextView)findViewById(R.id.txt_show_temp);
+		mTxtShowTempuV = (TextView)findViewById(R.id.txt_show_temp_uV);
+		
 		mBtnGetCalibration = (Button)findViewById(R.id.btn_get_calibration);
 		mTxtShowCalibration = (TextView)findViewById(R.id.txt_show_calibration);
 		mTxtConnectedState = (TextView)findViewById(R.id.txt_show_connected_state);
@@ -168,7 +175,8 @@ public class DeviceControlActivity extends Activity {
 		mBtnGetAlarmTemp = (Button)findViewById(R.id.btn_get_alarm_temp);
 		mTxtShowAlarmTemp = (TextView)findViewById(R.id.txt_show_alarm_temp);
 		
-		mTxtShowTempAdc = (TextView)findViewById(R.id.txt_show_temp_adc);
+		mBtnGetBatV = (Button)findViewById(R.id.btn_get_bat_v);
+		mTxtShowBatV = (TextView)findViewById(R.id.txt_show_bat_v);
 		
 		mTxtShowLog = (TextView) findViewById(R.id.txt_show_log);
 		mScrollViewShowLog = (ScrollView) findViewById(R.id.sv_show_log);
@@ -241,7 +249,7 @@ public class DeviceControlActivity extends Activity {
 					strB.append(Integer.toHexString(val[i]));
 					strB.append(":");
 				}
-				Log.e(TAG, "values = " + strB.toString());
+				Log.e(TAG, "SetAlarm :values = " + strB.toString());
 				
 				if (mRWGattChara != null && mBluetoothLeService != null) {
 					mRWGattChara.setValue(val);
@@ -267,6 +275,26 @@ public class DeviceControlActivity extends Activity {
 				}
 				
 				mTxtShowAlarmTemp.setText(null);
+			}
+		});
+		
+		mBtnGetBatV.setOnClickListener(new View.OnClickListener() {
+			
+			@Override
+			public void onClick(View v) {
+				// TODO Auto-generated method stub
+				byte[] val = new byte[4];
+				val[0] = TP_HEADER_VALUE;
+				val[1] = 0x01;
+				val[2] = (byte) 0x83;
+				val[3] = checkSum(val, val.length - 1);
+
+				if (mRWGattChara != null && mBluetoothLeService != null) {
+					mRWGattChara.setValue(val);
+					mBluetoothLeService.writeCharacteristic(mRWGattChara);
+				}
+				
+				mTxtShowBatV.setText(null);
 			}
 		});
 
@@ -382,7 +410,7 @@ public class DeviceControlActivity extends Activity {
 	private final byte TP_CMDS_GET_TEMPERATURE = (byte) 0x86;
 	private final byte TP_CMDS_GET_CALIBRATE_VALUE = (byte) 0x87;
 	private final byte TP_CMDS_GET_ALARM_TEMP = (byte) 0x82;
-	private final byte TP_CMDS_GET_TEMP_ADC = (byte) 0x88;
+	private final byte TP_CMDS_GET_BAT_ADC = (byte) 0x83;
 	
 	private void processValues(byte[] values) {
 		
@@ -391,7 +419,7 @@ public class DeviceControlActivity extends Activity {
 			strB.append(Integer.toHexString(values[i]));
 			strB.append(":");
 		}
-		Log.e(TAG, "values = " + strB.toString());
+		Log.e(TAG, "ble values = " + strB.toString());
 		
 		if (values.length <= 2) {
 			Log.e(TAG, "values.length " + values.length + " is smaller than 2");
@@ -402,10 +430,11 @@ public class DeviceControlActivity extends Activity {
 		byte header = values[pos++];
 		byte len = values[pos++];
 		
-		if (values.length < len + 2) {
-			Log.e(TAG, "values.length " + values.length + " is smaller than " + (len + 2));
+		if (values.length <= len + 2) {
+			Log.e(TAG, "values.length " + values.length + " is smaller than (or equal) " + (len + 2));
 			return;
 		}
+		
 		byte cmd = values[pos++];
 		byte theCrcSum = values[len + 2];
 		if (header != TP_HEADER_VALUE) {
@@ -422,9 +451,8 @@ public class DeviceControlActivity extends Activity {
 			int temp = 0;
 			int temp_adc = 0;
 			//1 means cmd; len = cmd + content
-			Log.e(TAG, "pos = " + pos);
 			int isFah = values[pos++];
-			Log.e(TAG, "isFah = " + isFah + ", pos = " + pos);
+			Log.e(TAG, "isFah = " + isFah + ", pos = " + (pos-1));
 			
 			for (int i = 0; i < 2; i++) {
 				temp += ((values[pos + i] & 0xff) << (i * 8));
@@ -438,8 +466,7 @@ public class DeviceControlActivity extends Activity {
 			sb.append(fmt.format(temp/100.0));
 			mHandler.obtainMessage(MSG_SHOW_TEMP, isFah, 0, sb.toString()).sendToTarget();
 			
-			
-			mHandler.obtainMessage(MSG_SHOW_TEMP_ADC, temp_adc, 0).sendToTarget();
+			mHandler.obtainMessage(MSG_SHOW_TEMP_UV, temp_adc, 0).sendToTarget();
 			break;
 
 		case TP_CMDS_GET_CALIBRATE_VALUE:
@@ -464,12 +491,12 @@ public class DeviceControlActivity extends Activity {
 			mHandler.obtainMessage(MSG_SHOW_ALARM_TEMP, alarm_temp, isFahrenheit).sendToTarget();
 			
 			break;
-		case TP_CMDS_GET_TEMP_ADC:
-//			int temp_adc = 0 ;
-//			for (int i = 0; i < len - 1; i++) {
-//				temp_adc += ((values[pos + i] & 0xff) << (i * 8));
-//			}
-//			mHandler.obtainMessage(MSG_SHOW_TEMP_ADC, temp_adc, 0).sendToTarget();
+		case TP_CMDS_GET_BAT_ADC:
+			int bat_adc = 0 ;
+			for (int i = 0; i < len - 1; i++) {
+				bat_adc += ((values[pos + i] & 0xff) << (i * 8));
+			}
+			mHandler.obtainMessage(MSG_SHOW_BAT_ADC, bat_adc, 0).sendToTarget();
 			
 			break;
 			
@@ -496,7 +523,8 @@ public class DeviceControlActivity extends Activity {
 	private final int MSG_SHOW_CALI = 4;
 	private final int MSG_SHOW_CONN_STATE = 5;
 	private final int MSG_SHOW_ALARM_TEMP = 6;
-	private final int MSG_SHOW_TEMP_ADC = 7;
+	private final int MSG_SHOW_TEMP_UV = 7;
+	private final int MSG_SHOW_BAT_ADC = 8;
 	private final int MSG_TRY_CONNECT_BLE = 80;
 	private final int TO_V_VALUE = 1000000;
 	private Handler mHandler = new Handler(){
@@ -573,21 +601,22 @@ public class DeviceControlActivity extends Activity {
 				
 				mTxtShowAlarmTemp.setText("报警值是: " + Float.toString(f1_alarm) + " V, " + "isFah = " + msg.arg2);
 				break;
-			case MSG_SHOW_TEMP_ADC:
-				int temp_adc = msg.arg1;
-//				StringBuilder adcSB = new StringBuilder();
-//				int V = temp_adc/TO_V_VALUE;
-//				int uV = temp_adc%TO_V_VALUE;
-//				adcSB.append(V);
-//				adcSB.append(".");
-//				adcSB.append(uV);
+			case MSG_SHOW_TEMP_UV:
+				int temp_uV = msg.arg1;
 				
-				
-				float f_adc = (float)((double)temp_adc/TO_V_VALUE);;
-				BigDecimal   b   =   new   BigDecimal(f_adc);  
-				float   f1   =   b.setScale(6,   BigDecimal.ROUND_HALF_UP).floatValue();  
-				mTxtShowTempAdc.setText(Float.toString(f1) + " V");
+//				float f_adc = (float)((double)temp_adc/TO_V_VALUE);;
+//				BigDecimal   b   =   new   BigDecimal(f_adc);  
+//				float   f1   =   b.setScale(6,   BigDecimal.ROUND_HALF_UP).floatValue();  
+				mTxtShowTempuV.setText(temp_uV + " uV");
 				break;
+			case MSG_SHOW_BAT_ADC:
+				int bat_uV = msg.arg1;
+				float f_adc = (float)((double)bat_uV/TO_V_VALUE);;
+				BigDecimal   b   =   new   BigDecimal(f_adc);  
+				float   f1   =   b.setScale(6,   BigDecimal.ROUND_HALF_UP).floatValue(); 
+				mTxtShowBatV.setText("battery vol = " + Float.toString(f1) + "V");
+				break;
+				
 			case MSG_TRY_CONNECT_BLE:
 				if (mBluetoothLeService != null) {
 					final boolean result = mBluetoothLeService.connect(mDeviceAddress);

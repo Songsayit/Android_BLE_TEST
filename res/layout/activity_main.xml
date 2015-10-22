@@ -54,16 +54,16 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_weight="2"
-            android:textSize="30sp"
-            android:text="ADC值:" />
+            android:textSize="20sp"
+            android:text="@string/show_temperarue_voltage" />
 
         <TextView
-            android:id="@+id/txt_show_temp_adc"
+            android:id="@+id/txt_show_temp_uV"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:textSize="30sp"
-            android:text="温度adc值" />
+            android:text="温度uV值" />
     </LinearLayout>
 
     <LinearLayout
@@ -132,6 +132,26 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="报警温度" />
+    </LinearLayout>
+    
+     <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal" >
+
+        <Button
+            android:id="@+id/btn_get_bat_v"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_weight="2"
+            android:text="@string/get_bat_v" />
+
+        <TextView
+            android:id="@+id/txt_show_bat_v"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="电量值" />
     </LinearLayout>
     
     
