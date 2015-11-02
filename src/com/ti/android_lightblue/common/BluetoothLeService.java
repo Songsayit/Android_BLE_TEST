@@ -338,7 +338,7 @@ public class BluetoothLeService extends Service {
 	
 	public boolean setCharacteristicNotification(
 			BluetoothGattCharacteristic characteristic, boolean enable) {
-		if (!checkGatt())
+		if (!checkGatt() || characteristic == null)
 			return false;
 		BluetoothGattDescriptor clientConfig;
 		do {
@@ -348,12 +348,11 @@ public class BluetoothLeService extends Service {
 				Log.w(TAG, "setCharacteristicNotification failed");
 				return false;
 			} else {
-				Log.w(TAG, "setCharacteristicNotification ok");
+				Log.i(TAG, "setCharacteristicNotification ok");
 			}
 
 			clientConfig = characteristic.getDescriptor(GattInfo.CLIENT_CHARACTERISTIC_CONFIG);
 		} while (clientConfig == null);
-		
 		
 		
 		if (enable) {

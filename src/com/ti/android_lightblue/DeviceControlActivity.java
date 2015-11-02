@@ -10,13 +10,19 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+import com.android.bleoad.BleOadManager;
+import com.android.bleoad.IBleOadCallback;
+import com.android.bleoad.IPlatformBleOad;
 import com.ti.android_lightblue.common.BluetoothLeService;
 import com.ti.android_lightblue.common.GattInfo;
 
 import android.app.Activity;
+import android.app.Dialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattService;
 import android.content.BroadcastReceiver;
@@ -28,12 +34,14 @@ import android.content.ServiceConnection;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.SimpleExpandableListAdapter;
 import android.widget.TextView;
@@ -45,6 +53,21 @@ public class DeviceControlActivity extends Activity {
 	public static final String EXTRAS_DEVICE_NAME = "DEVICE_NAME";
 	public static final String EXTRAS_DEVICE_ADDRESS = "DEVICE_ADDRESS";
 
+	private final String WRN_UUID = "00009025-0000-1000-8000-00805f9b34fb";
+	private final String TEMPERATURE_UUID = "00002a1c-0000-1000-8000-00805f9b34fb";
+	
+	///////////////////////////////////////////////////////////////////
+	//transport protocols (tp for short)
+	private final byte TP_HEADER_VALUE = (byte) 0xAA;
+	private final byte TP_CMDS_SET_ALARM_TEMP = (byte)0x81;
+	private final byte TP_CMDS_GET_ALARM_TEMP = (byte) 0x82;
+	private final byte TP_CMDS_GET_BAT_ADC = (byte) 0x83;
+	private final byte TP_CMDS_GET_VERSION = (byte) 0x84;
+	private final byte TP_CMDS_GET_TEMPERATURE = (byte) 0x86;
+	private final byte TP_CMDS_GET_CALIBRATE_VALUE = (byte) 0x87;
+	
+	
+	//////////////////////////////////////////////////////////////////
 	private Context mContext;
 
 	private String mDeviceName;
@@ -75,8 +98,20 @@ public class DeviceControlActivity extends Activity {
 	private Button mBtnGetBatV;
 	private TextView mTxtShowBatV;
 	
+	private Button mBtnGetVersion;
+	private TextView mTxtShowVersion;
+	
 	private TextView mTxtShowLog ;
 	private ScrollView mScrollViewShowLog ;
+	
+	private Button mBtnStartOad;
+	private ProgressBar mUpdateBinProgressBar;
+	
+	private Button mBtnSelectBin;
+	private TextView mTxtBinPath;
+	
+	private BleOadManager mBleOadManager;
+	private long mOadTime_us;
 	
 	private long disconnectCount = 0;
 
@@ -143,8 +178,20 @@ public class DeviceControlActivity extends Activity {
 				
 			} else if (BluetoothLeService.ACTION_DATA_NOTIFY.equals(action)) {
 				byte[] values = intent.getByteArrayExtra(BluetoothLeService.EXTRA_DATA);
-				Log.e(TAG, "ACTION_DATA_NOTIFY uuid = " + intent.getStringExtra(BluetoothLeService.EXTRA_UUID));
-				processValues(values);
+				String uuid = intent.getStringExtra(BluetoothLeService.EXTRA_UUID);
+				Log.d(TAG, "ACTION_DATA_NOTIFY uuid = " + uuid);
+				
+				
+				if (uuid.toUpperCase().equals(TEMPERATURE_UUID.toUpperCase())
+						|| uuid.toUpperCase().contains(WRN_UUID.toUpperCase())) {
+					
+					processValues(values);
+					
+				} else {
+					
+					mBleOadManager.onReceiveNoti(uuid, values);
+				}
+			} else if (BluetoothLeService.ACTION_DATA_WRITE.equals(action)) {
 			}
 		}
 	};
@@ -178,6 +225,15 @@ public class DeviceControlActivity extends Activity {
 		mBtnGetBatV = (Button)findViewById(R.id.btn_get_bat_v);
 		mTxtShowBatV = (TextView)findViewById(R.id.txt_show_bat_v);
 		
+		mBtnGetVersion = (Button)findViewById(R.id.btn_get_version);
+		mTxtShowVersion = (TextView)findViewById(R.id.txt_show_version);
+		
+		mBtnStartOad = (Button)findViewById(R.id.btn_start_oad);
+		mUpdateBinProgressBar = (ProgressBar)findViewById(R.id.progressbar_oad);
+		
+		mBtnSelectBin = (Button)findViewById(R.id.btn_select_bin);
+		mTxtBinPath = (TextView)findViewById(R.id.txt_show_bin_path);
+		
 		mTxtShowLog = (TextView) findViewById(R.id.txt_show_log);
 		mScrollViewShowLog = (ScrollView) findViewById(R.id.sv_show_log);
 		mScrollViewShowLog.post(new Runnable() {
@@ -203,7 +259,7 @@ public class DeviceControlActivity extends Activity {
 				byte[] val = new byte[4];
 				val[0] = TP_HEADER_VALUE;
 				val[1] = 0x01;
-				val[2] = (byte) 0x87;
+				val[2] = TP_CMDS_GET_CALIBRATE_VALUE;
 				val[3] = checkSum(val, val.length - 1);
 
 				if (mRWGattChara != null && mBluetoothLeService != null) {
@@ -223,7 +279,7 @@ public class DeviceControlActivity extends Activity {
 				byte[] val = new byte[9];
 				val[0] = TP_HEADER_VALUE;
 				val[1] = 0x06;
-				val[2] = (byte) 0x81;
+				val[2] = TP_CMDS_SET_ALARM_TEMP;
 				val[3] = 0;//base temp L
 				val[4] = 0;//base temp H
 				
@@ -266,7 +322,7 @@ public class DeviceControlActivity extends Activity {
 				byte[] val = new byte[4];
 				val[0] = TP_HEADER_VALUE;
 				val[1] = 0x01;
-				val[2] = (byte) 0x82;
+				val[2] = TP_CMDS_GET_ALARM_TEMP;
 				val[3] = checkSum(val, val.length - 1);
 
 				if (mRWGattChara != null && mBluetoothLeService != null) {
@@ -286,7 +342,7 @@ public class DeviceControlActivity extends Activity {
 				byte[] val = new byte[4];
 				val[0] = TP_HEADER_VALUE;
 				val[1] = 0x01;
-				val[2] = (byte) 0x83;
+				val[2] = TP_CMDS_GET_BAT_ADC;
 				val[3] = checkSum(val, val.length - 1);
 
 				if (mRWGattChara != null && mBluetoothLeService != null) {
@@ -297,18 +353,108 @@ public class DeviceControlActivity extends Activity {
 				mTxtShowBatV.setText(null);
 			}
 		});
+		
+		mBtnGetVersion.setOnClickListener(new View.OnClickListener() {
+			
+			@Override
+			public void onClick(View v) {
+				// TODO Auto-generated method stub
+				byte[] val = new byte[4];
+				val[0] = TP_HEADER_VALUE;
+				val[1] = 0x01;
+				val[2] = TP_CMDS_GET_VERSION;
+				val[3] = checkSum(val, val.length - 1);
 
+				if (mRWGattChara != null && mBluetoothLeService != null) {
+					mRWGattChara.setValue(val);
+					mBluetoothLeService.writeCharacteristic(mRWGattChara);
+				}
+				
+				mTxtShowVersion.setText(null);
+			}
+		});
+		
+		mBtnStartOad.setOnClickListener(new View.OnClickListener() {
+			
+			@Override
+			public void onClick(View v) {
+				// TODO Auto-generated method stub
+				mBleOadManager.setUpdateFilePath(mTxtBinPath.getText().toString());
+				mBleOadManager.startBleOad();
+				mOadTime_us = SystemClock.elapsedRealtime();
+				
+				
+			}
+		});
+		
+		mBtnSelectBin.setOnClickListener(new View.OnClickListener() {
+			
+			@Override
+			public void onClick(View v) {
+				// TODO Auto-generated method stub
+				showDialog(openfileDialogId);
+			}
+		});
+		
+		mBleOadManager = new BleOadManager(mContext) {
+
+			@Override
+			public boolean setCharacteristicNotification(
+					BluetoothGattCharacteristic characteristic, boolean enable) {
+				// TODO Auto-generated method stub
+				if (mBluetoothLeService != null) {
+					return mBluetoothLeService.setCharacteristicNotification(characteristic, enable);
+				}
+				
+				return false;
+			}
+
+			@Override
+			public boolean writeCharacteristic(
+					BluetoothGattCharacteristic characteristic) {
+				// TODO Auto-generated method stub
+				if (characteristic != null && mBluetoothLeService != null) {
+					return mBluetoothLeService.writeCharacteristic(characteristic);
+				}
+				
+				return false;
+			}
+			
+		};
+		
 	}
-
+	
+	static private int openfileDialogId = 0;
+	
+	@Override
+	protected Dialog onCreateDialog(int id) {
+		// TODO Auto-generated method stub
+		if(id==openfileDialogId){
+			Map<String, Integer> images = new HashMap<String, Integer>();
+			// 下面几句设置各文件类型的图标， 需要你先把图标添加到资源文件夹
+			images.put(OpenFileDialog.sRoot, R.drawable.filedialog_root);	// 根目录图标
+			images.put(OpenFileDialog.sParent, R.drawable.filedialog_folder_up);	//返回上一层的图标
+			images.put(OpenFileDialog.sFolder, R.drawable.filedialog_folder);	//文件夹图标
+			images.put("bin", R.drawable.filedialog_file);	//wav文件图标
+			images.put(OpenFileDialog.sEmpty, R.drawable.filedialog_root);
+			Dialog dialog = OpenFileDialog.createDialog(id, this, "打开文件", new CallbackBundle() {
+				@Override
+				public void callback(Bundle bundle) {
+					String filepath = bundle.getString("path");
+					mHandler.obtainMessage(MSG_SET_BIN_PATH, filepath).sendToTarget();
+				}
+			}, 
+			".bin;",
+			images);
+			return dialog;
+		}
+		return null;
+	}
+	
 	@Override
 	protected void onResume() {
 		super.onResume();
 		registerReceiver(mGattUpdateReceiver, makeGattUpdateIntentFilter());
-//		if (mBluetoothLeService != null) {
-//			final boolean result = mBluetoothLeService.connect(mDeviceAddress);
-//			Log.d(TAG, "Connect request result=" + result);
-//		}
-		
 		mHandler.sendEmptyMessageDelayed(MSG_TRY_CONNECT_BLE, 10);
 		
 	}
@@ -330,18 +476,22 @@ public class DeviceControlActivity extends Activity {
 	private void displayGattServices(List<BluetoothGattService> gattServices) {
 		if (gattServices == null)
 			return;
+		
+		int type = mBleOadManager.init(gattServices, mBleOadCallback);
+		
 		String uuid = null;
 		BluetoothGattService theGattService = null;
 		// Loops through available GATT Services.
 		for (BluetoothGattService gattService : gattServices) {
 			uuid = gattService.getUuid().toString();
+			
 			Log.e(TAG, "uuid = " + uuid);
 			if (GattInfo.isBtSigUuid(gattService.getUuid())) {
 				if (uuid.contains("1809")) {
 					theGattService = gattService;
 					break;
 				}
-			} 
+			}
 		}
 
 		if (theGattService == null)
@@ -357,10 +507,10 @@ public class DeviceControlActivity extends Activity {
 			int prop = gattCharacteristic.getProperties();
 			Log.e(TAG, "prop = " + getPropertyDescription(prop));
 			
-			if (uuid.contains("2a1c")) {
+			if (uuid.toUpperCase().equals(TEMPERATURE_UUID.toUpperCase())) {
 				mTempGattChara = gattCharacteristic;
 			}
-			if (uuid.contains("9025")) {
+			if (uuid.toUpperCase().equals(WRN_UUID.toUpperCase())) {
 				mRWGattChara = gattCharacteristic;
 			}
 		}
@@ -402,24 +552,21 @@ public class DeviceControlActivity extends Activity {
 		intentFilter
 				.addAction(BluetoothLeService.ACTION_GATT_SERVICES_DISCOVERED);
 		intentFilter.addAction(BluetoothLeService.ACTION_DATA_NOTIFY);
+		intentFilter.addAction(BluetoothLeService.ACTION_DATA_WRITE);
 		return intentFilter;
 	}
-	
-	//transport protocols (tp for short)
-	private final byte TP_HEADER_VALUE = (byte) 0xAA;
-	private final byte TP_CMDS_GET_TEMPERATURE = (byte) 0x86;
-	private final byte TP_CMDS_GET_CALIBRATE_VALUE = (byte) 0x87;
-	private final byte TP_CMDS_GET_ALARM_TEMP = (byte) 0x82;
-	private final byte TP_CMDS_GET_BAT_ADC = (byte) 0x83;
 	
 	private void processValues(byte[] values) {
 		
 		StringBuilder strB = new StringBuilder();
 		for (int i = 0; i < values.length; i++) {
-			strB.append(Integer.toHexString(values[i]));
-			strB.append(":");
+			String hex = Integer.toHexString(values[i] & 0xFF);
+            if (hex.length() == 1) {
+                hex = '0' + hex;
+            }
+			strB.append(hex.toUpperCase() + ": ");
 		}
-		Log.e(TAG, "ble values = " + strB.toString());
+		Log.i(TAG, "ble values = " + strB.toString());
 		
 		if (values.length <= 2) {
 			Log.e(TAG, "values.length " + values.length + " is smaller than 2");
@@ -452,7 +599,6 @@ public class DeviceControlActivity extends Activity {
 			int temp_adc = 0;
 			//1 means cmd; len = cmd + content
 			int isFah = values[pos++];
-			Log.e(TAG, "isFah = " + isFah + ", pos = " + (pos-1));
 			
 			for (int i = 0; i < 2; i++) {
 				temp += ((values[pos + i] & 0xff) << (i * 8));
@@ -500,6 +646,16 @@ public class DeviceControlActivity extends Activity {
 			
 			break;
 			
+		case TP_CMDS_GET_VERSION:
+			int version = 0;
+			for (int i = 0; i < len - 1; i++) {
+				version += ((values[pos + i] & 0xff) << (i * 8));
+			}
+			
+			mHandler.obtainMessage(MSG_SHOW_VERSION, version, 0).sendToTarget();
+			
+			break;
+			
 		default:
 			break;
 		}
@@ -525,7 +681,10 @@ public class DeviceControlActivity extends Activity {
 	private final int MSG_SHOW_ALARM_TEMP = 6;
 	private final int MSG_SHOW_TEMP_UV = 7;
 	private final int MSG_SHOW_BAT_ADC = 8;
+	private final int MSG_SHOW_VERSION = 9;
 	private final int MSG_TRY_CONNECT_BLE = 80;
+	private final int MSG_SET_BIN_PATH = 90;
+	private final int MSG_BIN_FILE_FAIL = 91;
 	private final int TO_V_VALUE = 1000000;
 	private Handler mHandler = new Handler(){
 		public void handleMessage(android.os.Message msg) {
@@ -535,7 +694,7 @@ public class DeviceControlActivity extends Activity {
 				if (mTempGattChara != null) {
 					Log.e(TAG, "set temp gatt chara enable");
 					if (!mBluetoothLeService.setCharacteristicNotification(mTempGattChara, true)) {
-						mHandler.sendEmptyMessageDelayed((MSG_HANDLER_TempGattChara), 100);
+						mHandler.sendEmptyMessageDelayed((MSG_HANDLER_TempGattChara), 500);
 					}
 				}
 				break;
@@ -543,7 +702,7 @@ public class DeviceControlActivity extends Activity {
 				if (mRWGattChara != null) {
 					Log.e(TAG, "set rw gatt chara enable");
 					if (!mBluetoothLeService.setCharacteristicNotification(mRWGattChara, true)) {
-						mHandler.sendEmptyMessageDelayed((MSG_HANDLER_RWGattChara), 100);
+						mHandler.sendEmptyMessageDelayed((MSG_HANDLER_RWGattChara), 500);
 					}
 				}
 				break;
@@ -617,18 +776,58 @@ public class DeviceControlActivity extends Activity {
 				mTxtShowBatV.setText("battery vol = " + Float.toString(f1) + "V");
 				break;
 				
+			case MSG_SHOW_VERSION:
+				
+				int version = msg.arg1;
+				int H = (byte) ((version >> 8) & 0xff);
+				int L = (byte) ((version) & 0xff);
+				String ver = "V" + H + "." + L;
+				mTxtShowVersion.setText(ver);
+				
+				break;
+				
 			case MSG_TRY_CONNECT_BLE:
 				if (mBluetoothLeService != null) {
 					final boolean result = mBluetoothLeService.connect(mDeviceAddress);
 					Log.d(TAG, "Connect request result=" + result);
 				}
-//				mHandler.sendEmptyMessageDelayed(MSG_TRY_CONNECT_BLE, 500);
+				break;
+			case MSG_SET_BIN_PATH:
+				String path = (String)msg.obj;
+				mTxtBinPath.setText(path);
+				Log.e(TAG, "path is " + mTxtBinPath.getText().toString());
+				break;
+			case MSG_BIN_FILE_FAIL:
+				Toast.makeText(mContext, "failed to set bin file.", Toast.LENGTH_SHORT).show();
 				break;
 				
 			default:
 				break;
 			}
 		};
+	};
+	
+	private IBleOadCallback mBleOadCallback = new IBleOadCallback() {
+		
+		@Override
+		public void onTransferInPercent(int percent) {
+			// TODO Auto-generated method stub
+			mUpdateBinProgressBar.setProgress(percent);
+			if (percent == 100) {
+				long time = SystemClock.elapsedRealtime();
+				long useTime = time - mOadTime_us;
+				Toast.makeText(mContext, "use time " + useTime + "us", Toast.LENGTH_LONG).show();
+			}
+		}
+		
+		@Override
+		public void onError(int reason) {
+			// TODO Auto-generated method stub
+			Log.e(TAG, "reason = " +  reason);
+			if (reason == IBleOadCallback.ERROR_READ_BIN_FILE) {
+				mHandler.sendEmptyMessage(MSG_BIN_FILE_FAIL);
+			}
+		}
 	};
 	
 	private String getTime() {

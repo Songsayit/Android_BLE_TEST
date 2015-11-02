@@ -23,5 +23,8 @@
 	<string name="set_alarm_temp">设置报警:  </string>
 	<string name="get_alarm_temp">获取报警值:  </string>
 	<string name="get_bat_v">获取电压值:  </string>
+	<string name="get_version">获取版本号:  </string>
+	<string name="start_oad">启动OAD  </string>
+	<string name="select_bin">选择BIN </string>
 	<string name="fahrenheit">华氏温度  </string>
 </resources>
