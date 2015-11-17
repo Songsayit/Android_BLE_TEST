@@ -15,6 +15,7 @@ import java.util.Map;
 import com.android.bleoad.BleOadManager;
 import com.android.bleoad.IBleOadCallback;
 import com.android.bleoad.IPlatformBleOad;
+import com.android.bleoad.Utils;
 import com.ti.android_lightblue.common.BluetoothLeService;
 import com.ti.android_lightblue.common.GattInfo;
 
@@ -62,9 +63,10 @@ public class DeviceControlActivity extends Activity {
 	private final byte TP_CMDS_SET_ALARM_TEMP = (byte)0x81;
 	private final byte TP_CMDS_GET_ALARM_TEMP = (byte) 0x82;
 	private final byte TP_CMDS_GET_BAT_ADC = (byte) 0x83;
-	private final byte TP_CMDS_GET_VERSION = (byte) 0x84;
+//	private final byte TP_CMDS_GET_VERSION = (byte) 0x84;
 	private final byte TP_CMDS_GET_TEMPERATURE = (byte) 0x86;
 	private final byte TP_CMDS_GET_CALIBRATE_VALUE = (byte) 0x87;
+	private final byte TP_CMDS_GET_VERSION_NEW = (byte) 0x88;
 	
 	
 	//////////////////////////////////////////////////////////////////
@@ -362,7 +364,7 @@ public class DeviceControlActivity extends Activity {
 				byte[] val = new byte[4];
 				val[0] = TP_HEADER_VALUE;
 				val[1] = 0x01;
-				val[2] = TP_CMDS_GET_VERSION;
+				val[2] = TP_CMDS_GET_VERSION_NEW;
 				val[3] = checkSum(val, val.length - 1);
 
 				if (mRWGattChara != null && mBluetoothLeService != null) {
@@ -646,13 +648,15 @@ public class DeviceControlActivity extends Activity {
 			
 			break;
 			
-		case TP_CMDS_GET_VERSION:
-			int version = 0;
-			for (int i = 0; i < len - 1; i++) {
-				version += ((values[pos + i] & 0xff) << (i * 8));
-			}
+		case TP_CMDS_GET_VERSION_NEW:
+//			int version = 0;
+//			for (int i = 0; i < len - 1; i++) {
+//				version += ((values[pos + i] & 0xff) << (i * 8));
+//			}
 			
-			mHandler.obtainMessage(MSG_SHOW_VERSION, version, 0).sendToTarget();
+			String versionStr = GetFirmwareVersionNew.processGetFirmwareVersionNew(values);
+			
+			mHandler.obtainMessage(MSG_SHOW_VERSION, versionStr).sendToTarget();
 			
 			break;
 			
@@ -660,7 +664,7 @@ public class DeviceControlActivity extends Activity {
 			break;
 		}
 	}
-
+	
 	private byte checkSum(byte[] pack, int len) {
 
 		int i = 0;
@@ -685,6 +689,8 @@ public class DeviceControlActivity extends Activity {
 	private final int MSG_TRY_CONNECT_BLE = 80;
 	private final int MSG_SET_BIN_PATH = 90;
 	private final int MSG_BIN_FILE_FAIL = 91;
+	private final int MSG_ERROR_TRANSFER = 92;
+	private final int MSG_ERROR_VERSION = 93;
 	private final int TO_V_VALUE = 1000000;
 	private Handler mHandler = new Handler(){
 		public void handleMessage(android.os.Message msg) {
@@ -778,10 +784,11 @@ public class DeviceControlActivity extends Activity {
 				
 			case MSG_SHOW_VERSION:
 				
-				int version = msg.arg1;
-				int H = (byte) ((version >> 8) & 0xff);
-				int L = (byte) ((version) & 0xff);
-				String ver = "V" + H + "." + L;
+//				int version = msg.arg1;
+//				int H = (byte) ((version >> 8) & 0xff);
+//				int L = (byte) ((version) & 0xff);
+//				String ver = "V" + H + "." + L;
+				String ver = (String) msg.obj;
 				mTxtShowVersion.setText(ver);
 				
 				break;
@@ -800,7 +807,12 @@ public class DeviceControlActivity extends Activity {
 			case MSG_BIN_FILE_FAIL:
 				Toast.makeText(mContext, "failed to set bin file.", Toast.LENGTH_SHORT).show();
 				break;
-				
+			case MSG_ERROR_TRANSFER:
+				Toast.makeText(mContext, "MSG_ERROR_TRANSFER.", Toast.LENGTH_SHORT).show();
+				break;
+			case MSG_ERROR_VERSION:
+				Toast.makeText(mContext, "MSG_ERROR_VERSION.", Toast.LENGTH_SHORT).show();
+				break;
 			default:
 				break;
 			}
@@ -809,14 +821,20 @@ public class DeviceControlActivity extends Activity {
 	
 	private IBleOadCallback mBleOadCallback = new IBleOadCallback() {
 		
+		private int mPercent = 0;
+		
 		@Override
 		public void onTransferInPercent(int percent) {
 			// TODO Auto-generated method stub
 			mUpdateBinProgressBar.setProgress(percent);
-			if (percent == 100) {
-				long time = SystemClock.elapsedRealtime();
-				long useTime = time - mOadTime_us;
-				Toast.makeText(mContext, "use time " + useTime + "us", Toast.LENGTH_LONG).show();
+			if (percent == 100 || percent == 1) {
+				
+				if (mPercent != percent) {
+					mPercent = percent;
+					long time = SystemClock.elapsedRealtime();
+					long useTime = time - mOadTime_us;
+					Toast.makeText(mContext, "use time " + useTime + "us,  percent = " + percent, Toast.LENGTH_LONG).show();
+				}
 			}
 		}
 		
@@ -825,7 +843,16 @@ public class DeviceControlActivity extends Activity {
 			// TODO Auto-generated method stub
 			Log.e(TAG, "reason = " +  reason);
 			if (reason == IBleOadCallback.ERROR_READ_BIN_FILE) {
+				
 				mHandler.sendEmptyMessage(MSG_BIN_FILE_FAIL);
+				
+			} else if (reason == IBleOadCallback.ERROR_TRANSFER) {
+				
+				mHandler.sendEmptyMessage(MSG_ERROR_TRANSFER);
+				
+			} else if (reason == IBleOadCallback.ERROR_VERSION) {
+				
+				mHandler.sendEmptyMessage(MSG_ERROR_VERSION);
 			}
 		}
 	};

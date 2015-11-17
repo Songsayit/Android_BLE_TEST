@@ -160,6 +160,7 @@ public class TIBleOad extends IPlatformBleOad {
 	private final int MSG_WR_IMG_IDENTIFY = MSG_SET_IMG_IDENTIFY_NOTI + 2;
 	private final int MSG_WR_IMG_BLOCK = MSG_SET_IMG_IDENTIFY_NOTI + 3;
 	private final int MSG_TRANSFER_PERCENT = MSG_SET_IMG_IDENTIFY_NOTI + 4;
+	private final int MSG_SEND_IMG_IDENTIFY = MSG_SET_IMG_IDENTIFY_NOTI + 5;
 	
 	private final int MSG_ERR_READ_BIN_FILE = MSG_SET_IMG_IDENTIFY_NOTI + 100;
 	private final int MSG_ERR_TRANSFER = MSG_ERR_READ_BIN_FILE + 1;
@@ -199,6 +200,11 @@ public class TIBleOad extends IPlatformBleOad {
 				}
 				
 				break;
+			case MSG_SEND_IMG_IDENTIFY:
+				
+				sendImgIdentify();
+				
+				break;
 			case MSG_WR_IMG_BLOCK:
 				ok = mBleOadManager.writeCharacteristic(mImgBlockGattChara);
 				if (!ok) {
@@ -210,7 +216,8 @@ public class TIBleOad extends IPlatformBleOad {
 				int numBlk = msg.arg1;
 				if (mBleOadCallback != null) {
 					int percent = (numBlk*100) / (mUpdateBlockList.size()-1);
-					mBleOadCallback.onTransferInPercent(0==percent ? 1 : percent);
+//					mBleOadCallback.onTransferInPercent(0==percent ? 1 : percent);
+					mBleOadCallback.onTransferInPercent(percent);
 				}
 				
 				break;
@@ -242,9 +249,17 @@ public class TIBleOad extends IPlatformBleOad {
 		// TODO Auto-generated constructor stub
 	}
 
+	private boolean isSendStopForStart = false;
+	
 	@Override
 	public void startBleOad() {
 		// TODO Auto-generated method stub
+		isSendStopForStart = true;
+		sendStopForStart();
+		mHandler.sendEmptyMessageDelayed(MSG_SEND_IMG_IDENTIFY, 500);
+	}
+	
+	private void sendImgIdentify() {
 		
 		boolean readFileOk = readUpdateFile();
 		if (!readFileOk) {
@@ -252,6 +267,7 @@ public class TIBleOad extends IPlatformBleOad {
 			Log.e(TAG, "ERROR: fail to read update bin file.");
 			return;
 		}
+		
 		int crc = crcCalImg();
 		
 		ImageMetadata metaData = new ImageMetadata();
@@ -271,9 +287,18 @@ public class TIBleOad extends IPlatformBleOad {
 		mImgIdentifyGattChara.setValue(data);
 		
 		mHandler.sendEmptyMessage(MSG_WR_IMG_IDENTIFY);
-		
 	}
-
+	
+	private void sendStopForStart() {
+		
+		byte[] retValues = new byte[2 + OAD_BLOCK_SIZE];
+		int blkNum =  0xfffe;
+		retValues[0] = Utils.LO_UINT16(blkNum);
+		retValues[1] = Utils.HI_UINT16(blkNum);
+		mImgBlockGattChara.setValue(retValues);
+		mHandler.sendEmptyMessage(MSG_WR_IMG_BLOCK);
+	}
+	
 	@Override
 	public void setBluetoothGattService(BluetoothGattService service) {
 		// TODO Auto-generated method stub
@@ -299,13 +324,21 @@ public class TIBleOad extends IPlatformBleOad {
 			mHandler.sendEmptyMessage(MSG_SET_IMG_BLOCK_NOTI);
 		}
 	}
-
+	
 	@Override
 	public void onReceiveNoti(String uuid, byte[] values) {
 		// TODO Auto-generated method stub
+		
 		if (UUID_OAD_IMG_BLOCK.toUpperCase().equals(uuid.toUpperCase())) {
 			
 			int blkNum = Utils.BUILD_UINT16(values[0], values[1]);
+			
+			if (isSendStopForStart) {
+				if (blkNum != 0) {
+					return;
+				}
+				isSendStopForStart = false;
+			}
 			
 			
 			if (blkNum != 0xffff && blkNum < mUpdateBlockList.size()) {
@@ -324,6 +357,7 @@ public class TIBleOad extends IPlatformBleOad {
 				mHandler.obtainMessage(MSG_TRANSFER_PERCENT, blkNum, 0).sendToTarget();
 				
 			} else {
+				
 				mHandler.sendEmptyMessage(MSG_ERR_TRANSFER);
 			}
 			
